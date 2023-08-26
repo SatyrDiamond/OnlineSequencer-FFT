@@ -290,7 +290,7 @@ class input_cvpj_r(plugin_input.base):
             for note in data:
                 cvpj_note = {}
                 cvpj_note['position'] = time_in_ms_to_time_index(note[2])
-                cvpj_note['key'] = note[0]-12
+                cvpj_note['key'] = note[0]
                 cvpj_note['duration'] = time_in_ms_to_time_index(note[3])
                 noteinst = 0 if note[4] else 1
                 cvpj_note['vol'] = note[1]
