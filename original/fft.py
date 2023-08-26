@@ -4,13 +4,9 @@ import sys
 import numpy
 import random
 import wave
-import json
+import sequence_pb2
 import dataclasses
 
-from functions import song
-from functions import tracks
-from functions import placement_data
-import plugin_input
 
 def note_str(k):
     # A440 == 0 == A4
@@ -47,7 +43,7 @@ FREQUENCY_BAND_RANDOM_CHUNKING_THRESHOLD = 1000
 TEMPO = 110
 
 # Don't mess with these though.
-MAXIMUM_NOTE = 40
+MAXIMUM_NOTE = 38
 MINIMUM_NOTE = -33
 CUTOFF_FREQ = note_to_freq(MAXIMUM_NOTE + 1)
 
@@ -246,7 +242,7 @@ def basic_fft(rawa, samp_freq):
             for m, g, t, c in qq:
                 square_sum += m * m
                 raw_data.append((
-                    g, m, j * 1000.0 / samp_freq, dj * 1000.0 / samp_freq, c, t))
+                    note_str(g), m, j * 1000.0 / samp_freq, dj * 1000.0 / samp_freq, c, t))
         st += 1
     data = []
     rms = math.sqrt(square_sum / len(raw_data)) / TARGET_RMS_VOLUME
@@ -266,48 +262,47 @@ def custom_fft_once(a, samp_freq, f):
     return math.sqrt(mr * mr + mi * mi)
 
 
-class input_cvpj_r(plugin_input.base):
-    def __init__(self): pass
-    def is_dawvert_plugin(self): return 'input'
-    def getshortname(self): return 'ash_fft'
-    def getname(self): return 'AshFFT'
-    def gettype(self): return 'r'
-    def supported_autodetect(self): return False
-    def getdawcapabilities(self): 
-        return { }
-    def parse(self, input_file, extra_param):
+file_path = sys.argv[1] if len(sys.argv) > 1 else 'amogus.wav'
 
-        cvpj_l = {}
+with wave.open(file_path, "rb") as w:
+    sequence = sequence_pb2.Sequence()  # noqa
+    sequence.settings.bpm = 110
 
-        global w
+    sequence.settings.instruments[13].volume = 1
+    sequence.settings.instruments[13].delay = False
+    sequence.settings.instruments[13].reverb = False
 
-        tracks.r_create_track(cvpj_l, 'instrument', '1')
-        tracks.r_create_track(cvpj_l, 'instrument', '2')
-        notelist = [[],[]]
+    sequence.settings.instruments[16].volume = 1
+    sequence.settings.instruments[16].delay = False
+    sequence.settings.instruments[16].reverb = False
+    sequence.settings.instruments[16].pan = 0
+    sequence.settings.instruments[16].pan = 0
+    sequence.settings.instruments[16].enable_eq = True
+    sequence.settings.instruments[16].eq_low = -48
+    sequence.settings.instruments[16].eq_mid = -48
+    sequence.settings.instruments[16].eq_high = 23
 
-        with wave.open(input_file, "rb") as w:
-            song.add_param(cvpj_l, 'bpm', 110)
-            print('Frames:', w.getnframes())
-            print('Sample Rate:', w.getframerate())
-            print('Sample Width:', w.getsampwidth())
-            print('Channels:', w.getnchannels())
-            assert w.getnchannels() == 1
-            assert w.getsampwidth() == 2
-            samp_freq = w.getframerate()
-            rawa = read_wav(w)
-            data = basic_fft(rawa, samp_freq)
-            print("%d notes" % len(data))
+    name = os.path.basename(file_path)
+    print('Frames:', w.getnframes())
+    print('Sample Rate:', w.getframerate())
+    print('Sample Width:', w.getsampwidth())
+    print('Channels:', w.getnchannels())
+    assert w.getnchannels() == 1
+    assert w.getsampwidth() == 2
+    samp_freq = w.getframerate()
+    rawa = read_wav(w)
+    data = basic_fft(rawa, samp_freq)
+    print("%d notes" % len(data))
 
-            for note in data:
-                cvpj_note = {}
-                cvpj_note['position'] = time_in_ms_to_time_index(note[2])
-                cvpj_note['key'] = note[0]-12
-                cvpj_note['duration'] = time_in_ms_to_time_index(note[3])
-                noteinst = 0 if note[4] else 1
-                cvpj_note['vol'] = note[1]
-                notelist[noteinst].append(cvpj_note)
+    for note in data:
+        new_note = sequence_pb2.Note()  # noqa
+        new_note.time = time_in_ms_to_time_index(note[2])
+        new_note.type = PIANO.index(note[0]) + 24
+        new_note.length = time_in_ms_to_time_index(note[3])
+        new_note.instrument = 16 if note[4] else 13
+        new_note.volume = note[1]
+        sequence.notes.append(new_note)
 
-            tracks.r_pl_notes(cvpj_l, '1', placement_data.nl2pl(notelist[0]))
-            tracks.r_pl_notes(cvpj_l, '2', placement_data.nl2pl(notelist[1]))
-
-        return json.dumps(cvpj_l)
+    with open("%s.sequence" % name, "wb") as seq:
+        seq.write(sequence.SerializeToString())
+        print('Sequence written to %s.sequence.' % name)
